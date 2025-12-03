@@ -14,20 +14,30 @@ const routes = require('./routes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(cors());
+// Middleware base
+app.use(cors({
+  origin: [
+      "http://localhost:5173",
+      "http://localhost:3000",
+      "http://localhost",
+    ], 
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Servir archivos estáticos (uploads)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Session para CSRF (vulnerable - sin token CSRF)
+// Session para CSRF
 app.use(session({
   secret: 'vulnerable-secret',
   resave: false,
   saveUninitialized: true,
-  cookie: { secure: false }
+  cookie: { secure: false,
+    httpOnly:true,
+    sameSite:"strict",
+  },
 }));
 
 // Usar todas las rutas con prefijo /api
@@ -59,6 +69,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('- POST /api/upload');
   console.log('- GET  /api/captcha');
   console.log('- POST /api/verify-captcha');
+  console.log('- GET  /api/csrf-token');
   console.log('- GET  /api/health');
 });
 
