@@ -1,84 +1,83 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { db } = require('../config/database');
+const { failedAttempts } = require('../middleware/bruteForceDefence');
 
-// VULNERABLE: Sin rate limiting para prevenir brute force
 const login = async (req, res) => {
+  const ip = req.ip || "unknown";
+  failedAttempts[ip] = failedAttempts[ip] || 0;
+
   const { username, password } = req.body;
-  
+
   const query = `SELECT * FROM users WHERE username = ?`;
-  
+
   db.query(query, [username], async (err, results) => {
     if (err) {
       return res.status(500).json({ error: 'Error en el servidor' });
     }
-    
+
     if (results.length === 0) {
+      failedAttempts[ip]++;
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
-    
+
     const user = results[0];
     const isValidPassword = await bcrypt.compare(password, user.password);
-    
+
     if (!isValidPassword) {
+      failedAttempts[ip]++;
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
-    
+
+    failedAttempts[ip] = 0;
+
     const token = jwt.sign(
-      { id: user.id, username: user.username }, 
+      { id: user.id, username: user.username },
       process.env.JWT_SECRET || 'supersecret123'
     );
-    
-    res.json({ token, username: user.username });
+
+    return res.json({ token, username: user.username });
   });
 };
-
-const register = async (req, res) => {
-  const { username, password, email } = req.body;
-  
-  const hashedPassword = await bcrypt.hash(password, 10);
-  
-  const query = 'INSERT INTO users (username, password, email) VALUES (?, ?, ?)';
-  db.query(query, [username, hashedPassword, email], (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Error al registrar usuario' });
-    }
-    res.json({ message: 'Usuario registrado con éxito' });
-  });
+const register = (req, res) => {
+  return res.status(501).json({ error: 'Not implemented' });
 };
 
 const verifyToken = (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecret123');
-    req.session.userId = decoded.id;
-    res.json({ valid: true, user: decoded });
-  } catch (error) {
-    res.status(401).json({ error: 'Invalid token' });
-  }
+  return res.status(501).json({ error: 'Not implemented' });
 };
 
-// VULNERABLE: Blind SQL Injection
 const checkUsername = (req, res) => {
-  const { username } = req.body;
-  
-  // VULNERABLE: SQL injection que permite inferir información
-  const query = `SELECT COUNT(*) as count FROM users WHERE username = '${username}'`;
-  
-  db.query(query, (err, results) => {
-    if (err) {
-      // VULNERABLE: Expone errores de SQL
-      return res.status(500).json({ error: err.message });
+  try {
+    const ip = req.ip || 'unknown';
+    const username = req.body && req.body.username;
+
+    if (!username || typeof username !== 'string' || !/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+      if (username && (username.includes("'") || username.includes('--') || /sleep/i.test(username))) {
+        console.warn('Posible intento de SQLi en checkUsername', { ip, username });
+      }
+
+      return res.json({ exists: false });
     }
-    
-    const exists = results[0].count > 0;
-    res.json({ exists });
-  });
+
+    const query = 'SELECT COUNT(*) as count FROM users WHERE username = ?';
+    db.query(query, [username], (err, results) => {
+      if (err) {
+        console.error('DB error in checkUsername:', err);
+        return res.json({ exists: false });
+      }
+
+      const count = (results && results[0] && (results[0].count || results[0].COUNT || results[0].count === 0))
+        ? Number(results[0].count || results[0].COUNT || 0)
+        : 0;
+
+      const delay = Math.floor(Math.random() * 100) + 50;
+      setTimeout(() => res.json({ exists: count > 0 }), delay);
+    });
+  } catch (error) {
+    console.error('Unexpected error in checkUsername:', error);
+    return res.json({ exists: false });
+  }
 };
 
 module.exports = {
