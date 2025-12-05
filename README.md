@@ -1,3 +1,8 @@
+#INTEGRANTES: 
+- Rossi Angelina 
+- Alvarez Lisandro
+- Belatti Mateo 
+
 # Aplicación Vulnerable - Práctica de Seguridad Web
 
 Esta aplicación ha sido diseñada específicamente para enseñar sobre vulnerabilidades comunes en aplicaciones web. **NO DEBE SER USADA EN PRODUCCIÓN**.
